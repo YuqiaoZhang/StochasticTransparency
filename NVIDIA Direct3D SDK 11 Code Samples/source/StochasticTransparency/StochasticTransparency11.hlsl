@@ -113,15 +113,17 @@ Pixel_PSOut TotalAlphaAndAccumulatePS( Geometry_VSOut IN )
 
 	//3.4 Depth-Based Stochastic Transparency
 	//C = Σ vis(z)*a*c
-    float4 c = ShadeFragment(IN.Normal);
+    float4 rgba = ShadeFragment(IN.Normal);
+	float3 c = rgba.rgb;
+	float a = rgba.a;
 
 	//4.2 Bias of Depth-Based Methods
 	//U = Σ visz * c * a
 	//U1 = Σ visz * a //The "R/S"
-	float ac = visz * c.a;
+	float ac = visz * a;
 
 	Pixel_PSOut rtval;
-	rtval.StochasticColorAndCorrectTotalAlpha = float4(ac * c.rgb, c.a);
+	rtval.StochasticColorAndCorrectTotalAlpha = float4(ac * c, a);
 	rtval.StochasticTotalAlpha = float4(ac, ac, ac, ac);
 	return rtval;
 }
@@ -154,3 +156,5 @@ float4 CompositePS(FullscreenVSOut IN) : SV_Target
 	float3 backgroundColor = tBackgroundColor.Load(int3(pos2d, 0)).rgb;
 	return float4(transparentColor + transmittance * backgroundColor, 1.0);
 }
+
+
