@@ -158,3 +158,21 @@ float4 CompositePS(FullscreenVSOut IN) : SV_Target
 }
 
 
+struct Basic_Pixel_PSOut
+{
+	float4 StochasticColorAndAlpha : SV_Target0;
+	uint AlphaToCoverage           : SV_Coverage;
+	float4 CorrectTotalAlpha       : SV_Target1;
+};
+
+Basic_Pixel_PSOut BasicStochasticTransparencyPS(Geometry_VSOut IN, uint PrimitiveID : SV_PrimitiveID)
+{
+	float4 rgba = ShadeFragment(IN.Normal);
+	float a = rgba.a;
+
+	Basic_Pixel_PSOut rtval;
+	rtval.StochasticColorAndAlpha = rgba;
+	rtval.AlphaToCoverage = randmaskwide(uint2(IN.HPosition.xy), a, PrimitiveID);
+	rtval.CorrectTotalAlpha = float4(a, a, a, a);
+	return rtval;
+}

@@ -98,6 +98,8 @@ public:
 		, m_pRndTexture(NULL)
 		, m_pRndTextureSRV(NULL)
 		, m_pTotalAlphaAndAccumulateBS(NULL)
+
+		, m_pBasicStochasticTransparencyPS(NULL)
 	{
 		CreateFrameBuffer(pd3dDevice, Width, Height);
 		CreateStochasticDepth(pd3dDevice, Width, Height);
@@ -258,7 +260,8 @@ public:
 		SAFE_RELEASE(m_pRndTextureSRV);
 		SAFE_RELEASE(m_pTotalAlphaAndAccumulateBS);
 		SAFE_RELEASE(m_pDepthNoWriteDS);
-
+		
+		SAFE_RELEASE(m_pBasicStochasticTransparencyPS);
 	}
 
 protected:
@@ -281,6 +284,10 @@ protected:
 
 		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "CompositePS", "ps_5_0", 0, &pBlob, NULL, NULL));
 		V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pCompositePS));
+		pBlob->Release();
+
+		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "BasicStochasticTransparencyPS", "ps_5_0", 0, &pBlob, NULL, NULL));
+		V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pBasicStochasticTransparencyPS));
 		pBlob->Release();
 	}
 
@@ -452,4 +459,8 @@ protected:
 	ID3D11ShaderResourceView *m_pRndTextureSRV;
 
 	ID3D11BlendState *m_pTotalAlphaAndAccumulateBS;
+
+
+	ID3D11PixelShader *m_pBasicStochasticTransparencyPS;
+
 };
