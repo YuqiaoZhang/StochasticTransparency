@@ -21,11 +21,11 @@
 // Removes noise for pixels with low depth complexity (1-2 layers / pixel)
 #define USE_ALPHA_CORRECTION 1
 
-Texture2D<uint>    tRandoms             : register(t0);
-Texture2DMS<float> tStochasticDepth     : register(t0);
-Texture2D<float3>  tBackgroundColor     : register(t0);
-Texture2D<float>   tTotalAlphaBuffer    : register(t1);
-Texture2D<float4>  tAccumulationBuffer  : register(t2);
+Texture2D<uint>    tRandoms                                      : register(t0);
+Texture2DMS<float> tStochasticDepth                              : register(t0);
+Texture2D<float3>  tBackgroundColor                              : register(t0);
+Texture2D<float4>  tStochasticColorAndCorrectTotalAlphaBuffer    : register(t1);
+Texture2D<float>   tStochasticTotalAlphaBuffer                   : register(t2);
 
 // from http://www.concentric.net/~Ttwang/tech/inthash.htm
 uint ihash(uint seed)
@@ -72,13 +72,6 @@ uint randmaskwide(uint2 pixelPos, float alpha, int primID)
     return tRandoms.Load(int3(coords, 0)).r;
 }
 
-//Total Alpha Pass
-float TotalAlphaPS ( Geometry_VSOut IN ) : SV_Target
-{
-    float alpha = ShadeFragment(IN.Normal).a;
-    return alpha;
-}
-
 //Stochastic Depth Pass
 uint StochasticDepthPS ( Geometry_VSOut IN, uint PrimitiveID : SV_PrimitiveID ) : SV_Coverage
 {
@@ -88,10 +81,15 @@ uint StochasticDepthPS ( Geometry_VSOut IN, uint PrimitiveID : SV_PrimitiveID ) 
     return randmaskwide(uint2(IN.HPosition.xy), alpha, PrimitiveID);
 }
 
-//Total Alpha Pass And Accumulation Pass Can Merge ???
+//We Merge TotalAlpha Pass And Accumulation Pass Together.
+struct Pixel_PSOut
+{
+	float4 StochasticColorAndCorrectTotalAlpha : SV_Target0;
+	float4 StochasticTotalAlpha                : SV_Target1;
+};
 
-//Accumulation Pass
-float4 AccumulationPS ( Geometry_VSOut IN ) : SV_Target
+//TotalAlpha And Accumulate Pass
+Pixel_PSOut TotalAlphaAndAccumulatePS( Geometry_VSOut IN )
 {
 	//Estimate Visibility
 	//3.2 Stochastic Shadow Maps
@@ -121,21 +119,25 @@ float4 AccumulationPS ( Geometry_VSOut IN ) : SV_Target
 	//U = Σ visz * c * a
 	//U1 = Σ visz * a //The "R/S"
 	float ac = visz * c.a;
-	return float4(ac * c.rgb, ac);
+
+	Pixel_PSOut rtval;
+	rtval.StochasticColorAndCorrectTotalAlpha = float4(ac * c.rgb, c.a);
+	rtval.StochasticTotalAlpha = float4(ac, ac, ac, ac);
+	return rtval;
 }
 
 float4 CompositePS(FullscreenVSOut IN) : SV_Target
 {
     int2 pos2d = int2(IN.pos.xy);
 
-	float3 backgroundColor = tBackgroundColor.Load(int3(pos2d, 0)).rgb;
-	float transmittance = tTotalAlphaBuffer.Load(int3(pos2d, 0)).r;
-
-	//4.2 Bias of Depth-Based Methods
+	//Step 1: Total Alpha Correction
 #if USE_ALPHA_CORRECTION
-	float4 t_U_U1 = tAccumulationBuffer.Load(int3(pos2d, 0));
-	float3 U = t_U_U1.rgb; //U = visz * c * a
-	float U1 = t_U_U1.a; //U1 = visz * a //The "R/S"
+	//4.2 Bias of Depth-Based Methods
+	float4 UAndT = tStochasticColorAndCorrectTotalAlphaBuffer.Load(int3(pos2d, 0));
+	float3 U = UAndT.rgb; //U = visz * c * a
+	float transmittance = UAndT.a; //TotalAlpha  
+	
+	float U1 = tStochasticTotalAlphaBuffer.Load(int3(pos2d, 0)).r; //U1 = visz * a //The "R/S"
 
 	float AC = 1.0 - transmittance; //TotalAlpha
 	float3 D = (U1 > 0.0) ? (AC*U / U1) : 0.0;
@@ -143,9 +145,12 @@ float4 CompositePS(FullscreenVSOut IN) : SV_Target
 	float3 transparentColor = D;
 #else
 	 //Too Dark
-	float3 transparentColor = tAccumulationBuffer.Load(int3(pos2d, 0)).rgb;
+	float4 UAndT = tStochasticColorAndCorrectTotalAlphaBuffer.Load(int3(pos2d, 0));
+	float3 transparentColor = UAndT.rgb; //U = visz * c * a
+	float transmittance = UAndT.a; //TotalAlpha  
 #endif
 
-	//Under Operator
+	//Step 2: Under Operator
+	float3 backgroundColor = tBackgroundColor.Load(int3(pos2d, 0)).rgb;
 	return float4(transparentColor + transmittance * backgroundColor, 1.0);
 }

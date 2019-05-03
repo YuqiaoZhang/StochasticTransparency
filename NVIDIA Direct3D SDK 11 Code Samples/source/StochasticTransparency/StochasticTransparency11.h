@@ -89,39 +89,37 @@ public:
 		: BaseTechnique(pd3dDevice)
 		, m_pBackgroundRenderTarget(NULL)
 		, m_pBackgroundDepth(NULL)
-		, m_pTotalAlphaRenderTarget(NULL)
-		, m_pAccumulationRenderTarget(NULL)
+		, m_pStochasticColorAndCorrectTotalAlphaRenderTarget(NULL)
+		, m_pStochasticTotalAlphaRenderTarget(NULL)
 		, m_pStochasticDepth(NULL)
-		, m_pTotalAlphaPS(NULL)
 		, m_pStochasticDepthPS(NULL)
-		, m_pAccumulationPS(NULL)
+		, m_pTotalAlphaAndAccumulatePS(NULL)
 		, m_pCompositePS(NULL)
-        , m_pRndTexture(NULL)
-        , m_pRndTextureSRV(NULL)    
-        , m_pAdditiveBlendingBS(NULL)
-        , m_pTransmittanceBS(NULL)
-    {
+		, m_pRndTexture(NULL)
+		, m_pRndTextureSRV(NULL)
+		, m_pTotalAlphaAndAccumulateBS(NULL)
+	{
 		CreateFrameBuffer(pd3dDevice, Width, Height);
 		CreateStochasticDepth(pd3dDevice, Width, Height);
-        CreateRandomBitmasks(pd3dDevice);
-        CreateBlendStates(pd3dDevice);
-        CreateShaders(pd3dDevice);
-        CBData.randMaskSizePowOf2MinusOne = RANDOM_SIZE - 1;
-        CBData.randMaskAlphaValues = ALPHA_VALUES;
-    }
+		CreateRandomBitmasks(pd3dDevice);
+		CreateBlendStates(pd3dDevice);
+		CreateShaders(pd3dDevice);
+		CBData.randMaskSizePowOf2MinusOne = RANDOM_SIZE - 1;
+		CBData.randMaskAlphaValues = ALPHA_VALUES;
+	}
 
-    virtual void Render(ID3D11DeviceContext* pd3dImmediateContext, ID3D11RenderTargetView *pBackBuffer)
-    {
+	virtual void Render(ID3D11DeviceContext* pd3dImmediateContext, ID3D11RenderTargetView *pBackBuffer)
+	{
 		ID3DUserDefinedAnnotation *pPerf;
 		pd3dImmediateContext->QueryInterface(IID_PPV_ARGS(&pPerf));
 
 		//MSAA For Stochastic Is Irrelevant To MSAA For Spatial Antialiasing 
 		//Backgroud Color May Not Be MSAA
-		
+
 		//----------------------------------------------------------------------------------
 		// 1. Render Opaque Background
 		//----------------------------------------------------------------------------------
-        //The background colors should be initialized by drawing the opaque objects in the scene.
+		//The background colors should be initialized by drawing the opaque objects in the scene.
 		pPerf->BeginEvent(L"Opaque Pass");
 		float ClearColorBack[4] = { m_BackgroundColor.x, m_BackgroundColor.y, m_BackgroundColor.z, 0 };
 		pd3dImmediateContext->ClearRenderTargetView(m_pBackgroundRenderTarget->pRTV, ClearColorBack);
@@ -129,79 +127,68 @@ public:
 		pd3dImmediateContext->ClearDepthStencilView(m_pBackgroundDepth->pDSV, D3D11_CLEAR_DEPTH, ClearDepthBack, 0U);
 		pPerf->EndEvent();
 
-        // Update the constant buffer
-        pd3dImmediateContext->UpdateSubresource(m_pParamsCB, 0, NULL, &CBData, 0, 0);
+		// Update the constant buffer
+		pd3dImmediateContext->UpdateSubresource(m_pParamsCB, 0, NULL, &CBData, 0, 0);
 
-        // Set shared states
-        pd3dImmediateContext->IASetInputLayout(m_pInputLayout);
-        pd3dImmediateContext->VSSetShader(m_pGeometryVS, NULL, 0);
-        pd3dImmediateContext->GSSetShader(NULL, NULL, 0);
-        pd3dImmediateContext->RSSetState(m_pNoCullRS);
-        pd3dImmediateContext->VSSetConstantBuffers(0, 1, &m_pParamsCB);
-        pd3dImmediateContext->PSSetConstantBuffers(0, 1, &m_pParamsCB);
-        pd3dImmediateContext->PSSetConstantBuffers(1, 1, &m_pShadingParamsCB);
-
-		//Total Alpha Pass And Accumulation Pass Can Merge ???
-
-        //----------------------------------------------------------------------------------
-        // 2. Render total transmittance
-        //----------------------------------------------------------------------------------
-		pPerf->BeginEvent(L"Total Alpha Pass");
-
-        float ClearColorAlpha[4] = { 1.0f };
-        pd3dImmediateContext->ClearRenderTargetView(m_pTotalAlphaRenderTarget->pRTV, ClearColorAlpha);
-
-		//Should Pass Background Depth
-        pd3dImmediateContext->OMSetRenderTargets(1, &m_pTotalAlphaRenderTarget->pRTV, NULL);
-        pd3dImmediateContext->OMSetBlendState(m_pTransmittanceBS, m_BlendFactor, 0xffffffff);
-        pd3dImmediateContext->OMSetDepthStencilState(m_pNoDepthNoStencilDS, 0);
-
-        pd3dImmediateContext->PSSetShader(m_pTotalAlphaPS, NULL, 0);
-
-        DrawMesh(pd3dImmediateContext, m_Mesh);
-
-		pPerf->EndEvent();
+		// Set shared states
+		pd3dImmediateContext->IASetInputLayout(m_pInputLayout);
+		pd3dImmediateContext->VSSetShader(m_pGeometryVS, NULL, 0);
+		pd3dImmediateContext->GSSetShader(NULL, NULL, 0);
+		pd3dImmediateContext->RSSetState(m_pNoCullRS);
+		pd3dImmediateContext->VSSetConstantBuffers(0, 1, &m_pParamsCB);
+		pd3dImmediateContext->PSSetConstantBuffers(0, 1, &m_pParamsCB);
+		pd3dImmediateContext->PSSetConstantBuffers(1, 1, &m_pShadingParamsCB);
 
 		//We Only Need Multi-Pass When The Sample Count We Need Exceed MSAA Support
-        //for (UINT LayerId = 0; LayerId < m_NumPasses; ++LayerId)
-        {
+		//for (UINT LayerId = 0; LayerId < m_NumPasses; ++LayerId)
+		{
 			CBData.randomOffset = 0;
-            pd3dImmediateContext->UpdateSubresource(m_pParamsCB, 0, NULL, &CBData, 0, 0);
+			pd3dImmediateContext->UpdateSubresource(m_pParamsCB, 0, NULL, &CBData, 0, 0);
 
-            //----------------------------------------------------------------------------------
-            // 3. Render MSAA "stochastic depths", writting SV_Coverage in the pixel shader
-            //----------------------------------------------------------------------------------
+			//----------------------------------------------------------------------------------
+			// 2. Render MSAA "stochastic depths", writting SV_Coverage in the pixel shader
+			//----------------------------------------------------------------------------------
 			pPerf->BeginEvent(L"Stochastic Depth Pass");
 
-            pd3dImmediateContext->ClearDepthStencilView(m_pStochasticDepth->pDSV, D3D11_CLEAR_DEPTH, 1.0, 0);
+			//In Application, We Should Copy From Background Depth To Stochastic Depth
+			//We Simplify This In The Sample.
+			pd3dImmediateContext->ClearDepthStencilView(m_pStochasticDepth->pDSV, D3D11_CLEAR_DEPTH, 1.0, 0);
 
-            pd3dImmediateContext->OMSetRenderTargets(0, NULL, m_pStochasticDepth->pDSV);
-            pd3dImmediateContext->OMSetBlendState(m_pNoBlendBS, m_BlendFactor, 0XFFFFFFFF);
-            pd3dImmediateContext->OMSetDepthStencilState(m_pDepthNoStencilDS, 0);
+			pd3dImmediateContext->OMSetRenderTargets(0, NULL, m_pStochasticDepth->pDSV);
+			pd3dImmediateContext->OMSetBlendState(m_pNoBlendBS, m_BlendFactor, 0XFFFFFFFF);
+			pd3dImmediateContext->OMSetDepthStencilState(m_pDepthNoStencilDS, 0);
 
-            pd3dImmediateContext->PSSetShader(m_pStochasticDepthPS, NULL, 0);
-            pd3dImmediateContext->PSSetShaderResources(0, 1, &m_pRndTextureSRV);
+			pd3dImmediateContext->PSSetShader(m_pStochasticDepthPS, NULL, 0);
+			pd3dImmediateContext->PSSetShaderResources(0, 1, &m_pRndTextureSRV);
 
-            DrawMesh(pd3dImmediateContext, m_Mesh);
+			DrawMesh(pd3dImmediateContext, m_Mesh);
 
 			pPerf->EndEvent();
 
-            //----------------------------------------------------------------------------------
-            // 4. Render colors in front of the Opaque Background with additive blending
-            //----------------------------------------------------------------------------------
-			pPerf->BeginEvent(L"Accumulation Pass");
+			//----------------------------------------------------------------------------------
+			// 3. We Merge TotalAlpha And Accumulate Together
+			//----------------------------------------------------------------------------------
+			pPerf->BeginEvent(L"TotalAlpha And Accumulate Pass");
 
-            float Zero[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-            pd3dImmediateContext->ClearRenderTargetView(m_pAccumulationRenderTarget->pRTV, Zero);
+			float ClearStochasticColorAndCorrectTotalAlpha[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+			pd3dImmediateContext->ClearRenderTargetView(m_pStochasticColorAndCorrectTotalAlphaRenderTarget->pRTV, ClearStochasticColorAndCorrectTotalAlpha);
+
+			float ClearStochasticTotalAlpha[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+			pd3dImmediateContext->ClearRenderTargetView(m_pStochasticTotalAlphaRenderTarget->pRTV, ClearStochasticTotalAlpha);
 
 			//UnBind Stochastic Depth
 			//DSV->SRV
-            pd3dImmediateContext->OMSetRenderTargets(1, &m_pAccumulationRenderTarget->pRTV, m_pBackgroundDepth->pDSV);
-            
-			pd3dImmediateContext->OMSetBlendState(m_pAdditiveBlendingBS, m_BlendFactor, 0xffffffff);
-            pd3dImmediateContext->OMSetDepthStencilState(m_pDepthNoWriteDS, 0);
+			ID3D11RenderTargetView *pRTVs[2] =
+			{
+				m_pStochasticColorAndCorrectTotalAlphaRenderTarget->pRTV,
+				m_pStochasticTotalAlphaRenderTarget->pRTV
+			};
+			pd3dImmediateContext->OMSetRenderTargets(2, pRTVs, m_pBackgroundDepth->pDSV);
 
-			pd3dImmediateContext->PSSetShader(m_pAccumulationPS, NULL, 0);
+			pd3dImmediateContext->OMSetBlendState(m_pTotalAlphaAndAccumulateBS, m_BlendFactor, 0xffffffff);
+			pd3dImmediateContext->OMSetDepthStencilState(m_pDepthNoWriteDS, 0);
+
+			pd3dImmediateContext->PSSetShader(m_pTotalAlphaAndAccumulatePS, NULL, 0);
 
 			ID3D11ShaderResourceView *pSRVs[1] =
 			{
@@ -210,32 +197,32 @@ public:
 			pd3dImmediateContext->PSSetShaderResources(0, 1, pSRVs);
 
 
-            DrawMesh(pd3dImmediateContext, m_Mesh);
+			DrawMesh(pd3dImmediateContext, m_Mesh);
 
 			pPerf->EndEvent();
-        }
+		}
 
-        //----------------------------------------------------------------------------------
-        // 5. Final full-screen pass, blending the transparent colors over the background
-        //----------------------------------------------------------------------------------
+		//----------------------------------------------------------------------------------
+		// 5. Final full-screen pass, blending the transparent colors over the background
+		//----------------------------------------------------------------------------------
 		pPerf->BeginEvent(L"Composite Pass"); //Total Alpha Correction And Under Operator
-		
-        pd3dImmediateContext->OMSetRenderTargets(1, &pBackBuffer, NULL);
-        pd3dImmediateContext->OMSetDepthStencilState(m_pNoDepthNoStencilDS, 0);
-        pd3dImmediateContext->OMSetBlendState(m_pNoBlendBS, m_BlendFactor, 0xffffffff);
 
-        pd3dImmediateContext->VSSetShader(m_pFullScreenTriangleVS, NULL, 0);
-        pd3dImmediateContext->PSSetShader(m_pCompositePS, NULL, 0);
+		pd3dImmediateContext->OMSetRenderTargets(1, &pBackBuffer, NULL);
+		pd3dImmediateContext->OMSetDepthStencilState(m_pNoDepthNoStencilDS, 0);
+		pd3dImmediateContext->OMSetBlendState(m_pNoBlendBS, m_BlendFactor, 0xffffffff);
+
+		pd3dImmediateContext->VSSetShader(m_pFullScreenTriangleVS, NULL, 0);
+		pd3dImmediateContext->PSSetShader(m_pCompositePS, NULL, 0);
 
 		ID3D11ShaderResourceView *pSRVs[3] =
 		{
 			m_pBackgroundRenderTarget->pSRV,
-			m_pTotalAlphaRenderTarget->pSRV,
-			m_pAccumulationRenderTarget->pSRV
+			m_pStochasticColorAndCorrectTotalAlphaRenderTarget->pSRV,
+			m_pStochasticTotalAlphaRenderTarget->pSRV
 		};
-        pd3dImmediateContext->PSSetShaderResources(0, 3, pSRVs);
+		pd3dImmediateContext->PSSetShaderResources(0, 3, pSRVs);
 
-        pd3dImmediateContext->Draw(3, 0);
+		pd3dImmediateContext->Draw(3, 0);
 
 		//UnBind SRV->RTV
 		ID3D11ShaderResourceView *pNULLSRVs[3] =
@@ -250,169 +237,165 @@ public:
 		pPerf->EndEvent();
 
 		pPerf->Release();
-    }
+	}
 
-    void SetNumPasses(UINT NumPasses)
-    {
+	void SetNumPasses(UINT NumPasses)
+	{
 
-    }
+	}
 
-    ~StochasticTransparency()
-    {
+	~StochasticTransparency()
+	{
 		SAFE_DELETE(m_pBackgroundRenderTarget);
 		SAFE_DELETE(m_pBackgroundDepth);
-		SAFE_DELETE(m_pTotalAlphaRenderTarget);
-		SAFE_DELETE(m_pAccumulationRenderTarget);
 		SAFE_DELETE(m_pStochasticDepth);
-		SAFE_RELEASE(m_pTotalAlphaPS);
+		SAFE_DELETE(m_pStochasticColorAndCorrectTotalAlphaRenderTarget);
+		SAFE_DELETE(m_pStochasticTotalAlphaRenderTarget);
 		SAFE_RELEASE(m_pStochasticDepthPS);
-		SAFE_RELEASE(m_pAccumulationPS);
+		SAFE_RELEASE(m_pTotalAlphaAndAccumulatePS);
 		SAFE_RELEASE(m_pCompositePS);
-        SAFE_RELEASE(m_pRndTexture);
-        SAFE_RELEASE(m_pRndTextureSRV);
-        SAFE_RELEASE(m_pAdditiveBlendingBS);
-        SAFE_RELEASE(m_pTransmittanceBS);
-        SAFE_RELEASE(m_pDepthNoWriteDS);
+		SAFE_RELEASE(m_pRndTexture);
+		SAFE_RELEASE(m_pRndTextureSRV);
+		SAFE_RELEASE(m_pTotalAlphaAndAccumulateBS);
+		SAFE_RELEASE(m_pDepthNoWriteDS);
 
-    }
+	}
 
 protected:
-    void CreateShaders(ID3D11Device* pd3dDevice)
-    {
-        HRESULT hr;
+	void CreateShaders(ID3D11Device* pd3dDevice)
+	{
+		HRESULT hr;
 
-        WCHAR ShaderPath[MAX_PATH];
-        V( DXUTFindDXSDKMediaFileCch( ShaderPath, MAX_PATH, L"StochasticTransparency11.hlsl" ) );
+		WCHAR ShaderPath[MAX_PATH];
+		V(DXUTFindDXSDKMediaFileCch(ShaderPath, MAX_PATH, L"StochasticTransparency11.hlsl"));
 
-        LPD3DXBUFFER pBlob;
-		LPD3DXBUFFER pBlobError;
-        V( D3DXCompileShaderFromFile( ShaderPath, NULL, NULL, "TotalAlphaPS", "ps_5_0", 0, &pBlob, &pBlobError, NULL ) );
-		V( pd3dDevice->CreatePixelShader( (DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pTotalAlphaPS) );
-        pBlob->Release();
+		LPD3DXBUFFER pBlob;
+		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "StochasticDepthPS", "ps_5_0", 0, &pBlob, NULL, NULL));
+		V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pStochasticDepthPS));
+		pBlob->Release();
 
-        V( D3DXCompileShaderFromFile( ShaderPath, NULL, NULL, "StochasticDepthPS", "ps_5_0", 0, &pBlob, NULL, NULL ) );
-        V( pd3dDevice->CreatePixelShader( (DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pStochasticDepthPS) );
-        pBlob->Release();
-
-        V( D3DXCompileShaderFromFile( ShaderPath, NULL, NULL, "AccumulationPS", "ps_5_0", 0, &pBlob, NULL, NULL ) );
-        V( pd3dDevice->CreatePixelShader( (DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pAccumulationPS) );
-        pBlob->Release();
+		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "TotalAlphaAndAccumulatePS", "ps_5_0", 0, &pBlob, NULL, NULL));
+		V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pTotalAlphaAndAccumulatePS));
+		pBlob->Release();
 
 
 		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "CompositePS", "ps_5_0", 0, &pBlob, NULL, NULL));
 		V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pCompositePS));
 		pBlob->Release();
-    }
+	}
 
-    void CreateBlendStates(ID3D11Device* pd3dDevice)
-    {
-        D3D11_BLEND_DESC BlendStateDesc;
-        BlendStateDesc.AlphaToCoverageEnable = FALSE;
-        BlendStateDesc.IndependentBlendEnable = FALSE;
-        for (int i = 0; i < 8; ++i)
-        {
-            BlendStateDesc.RenderTarget[i].BlendEnable = FALSE;
-            BlendStateDesc.RenderTarget[i].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-        }
+	void CreateBlendStates(ID3D11Device* pd3dDevice)
+	{
+		D3D11_BLEND_DESC BlendStateDesc;
+		//AlphaToCoverage不能做到相互独立（uncorrelated），不可用
+		BlendStateDesc.AlphaToCoverageEnable = FALSE;
 
-        BlendStateDesc.RenderTarget[0].BlendEnable = TRUE;
-        BlendStateDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+		//0 For Accumulate
+		//1 For TotalAlpha
+		BlendStateDesc.IndependentBlendEnable = TRUE;
 
-        // Create m_pAdditiveBlendingBS
-        // dst.rgba += src.rgba
+		//DestColor/*ToRT*/ = BlendOp(DestBlend*DestColor/*FromRT*/, SrcBlend*SrcColor/*FromPS*/)
+		//DestAlpha/*ToRT*/ = BlendOpAlpha(DestBlendAlpha*DestAlpha/*FromRT*/, SrcBlendAlpha*SrcAlpha/*FromPS*/)
 
-        BlendStateDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
-        BlendStateDesc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
-        BlendStateDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		//StochasticColor+CorrectTotalAlpha
+		BlendStateDesc.RenderTarget[0].BlendEnable = TRUE;
+		BlendStateDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+		BlendStateDesc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
+		BlendStateDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		BlendStateDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+		BlendStateDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+		BlendStateDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		BlendStateDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 
-        BlendStateDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-        BlendStateDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
-        BlendStateDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		//StochasticTotalAlpha
+		BlendStateDesc.RenderTarget[1].BlendEnable = TRUE;
+		BlendStateDesc.RenderTarget[1].SrcBlend = D3D11_BLEND_ONE;
+		BlendStateDesc.RenderTarget[1].DestBlend = D3D11_BLEND_ONE;
+		BlendStateDesc.RenderTarget[1].BlendOp = D3D11_BLEND_OP_ADD;
+		BlendStateDesc.RenderTarget[1].SrcBlendAlpha = D3D11_BLEND_ONE;
+		BlendStateDesc.RenderTarget[1].DestBlendAlpha = D3D11_BLEND_ONE;
+		BlendStateDesc.RenderTarget[1].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		BlendStateDesc.RenderTarget[1].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 
-        pd3dDevice->CreateBlendState(&BlendStateDesc, &m_pAdditiveBlendingBS);
+		for (int i = 2; i < 8; ++i)
+		{
+			BlendStateDesc.RenderTarget[i].BlendEnable = FALSE;
+			BlendStateDesc.RenderTarget[i].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+		}
 
-        // Create m_pTransmittanceBS
-        // dst.r *= (1.0 - src.r)
+		pd3dDevice->CreateBlendState(&BlendStateDesc, &m_pTotalAlphaAndAccumulateBS);
+	}
 
-        BlendStateDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
-        BlendStateDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
-        BlendStateDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+	void CreateRandomBitmasks(ID3D11Device* pd3dDevice)
+	{
+		MTRand rng;
+		rng.seed((unsigned)0);
 
-        pd3dDevice->CreateBlendState(&BlendStateDesc, &m_pTransmittanceBS);
+		int numbers[NUM_MSAA_SAMPLES];
+		unsigned int *allmasks = new unsigned int[RANDOM_SIZE * (ALPHA_VALUES + 1)];
 
+		for (int y = 0; y <= ALPHA_VALUES; y++) // Inclusive, we need alpha = 1.0
+		{
+			for (int x = 0; x < RANDOM_SIZE; x++)
+			{
+				// Initialize array
+				for (int i = 0; i < NUM_MSAA_SAMPLES; i++)
+				{
+					numbers[i] = i;
+				}
 
-    }
+				// Scramble!
+				for (int i = 0; i < NUM_MSAA_SAMPLES * 2; i++)
+				{
+					std::swap(numbers[rng.randInt() % NUM_MSAA_SAMPLES], numbers[rng.randInt() % NUM_MSAA_SAMPLES]);
+				}
 
-    void CreateRandomBitmasks(ID3D11Device* pd3dDevice)
-    {
-        MTRand rng;
-        rng.seed((unsigned)0);
+				// Create the mask
+				unsigned int mask = 0;
+				float nof_bits_to_set = (float(y) / float(ALPHA_VALUES)) * NUM_MSAA_SAMPLES;
+				for (int bit = 0; bit < int(nof_bits_to_set); bit++)
+				{
+					mask |= (1 << numbers[bit]);
+				}
+				float prob_of_last_bit = (nof_bits_to_set - floor(nof_bits_to_set));
+				if (rng.randExc() < prob_of_last_bit)
+				{
+					mask |= (1 << numbers[int(nof_bits_to_set)]);
+				}
 
-        int numbers[NUM_MSAA_SAMPLES];
-        unsigned int *allmasks = new unsigned int[RANDOM_SIZE * (ALPHA_VALUES + 1)];
+				allmasks[y * RANDOM_SIZE + x] = mask;
+			}
+		}
 
-        for (int y = 0; y <= ALPHA_VALUES; y++) // Inclusive, we need alpha = 1.0
-        {
-            for (int x = 0; x < RANDOM_SIZE; x++)
-            {
-                // Initialize array
-                for (int i = 0; i < NUM_MSAA_SAMPLES; i++)
-                {
-                    numbers[i] = i;
-                }
+		D3D11_TEXTURE2D_DESC texDesc;
+		texDesc.Width = RANDOM_SIZE;
+		texDesc.Height = ALPHA_VALUES + 1;
+		texDesc.MipLevels = 1;
+		texDesc.ArraySize = 1;
+		texDesc.Format = DXGI_FORMAT_R32_UINT;
+		texDesc.SampleDesc.Count = 1;
+		texDesc.SampleDesc.Quality = 0;
+		texDesc.Usage = D3D11_USAGE_IMMUTABLE;
+		texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		texDesc.CPUAccessFlags = 0;
+		texDesc.MiscFlags = 0;
 
-                // Scramble!
-                for (int i = 0; i < NUM_MSAA_SAMPLES * 2; i++)
-                {
-                    std::swap(numbers[rng.randInt() % NUM_MSAA_SAMPLES], numbers[rng.randInt() % NUM_MSAA_SAMPLES]);
-                }
+		D3D11_SUBRESOURCE_DATA srDesc;
+		srDesc.pSysMem = allmasks;
+		srDesc.SysMemPitch = texDesc.Width * sizeof(unsigned int);
+		srDesc.SysMemSlicePitch = 0;
 
-                // Create the mask
-                unsigned int mask = 0;
-                float nof_bits_to_set = (float(y) / float(ALPHA_VALUES)) * NUM_MSAA_SAMPLES;
-                for (int bit = 0; bit < int(nof_bits_to_set); bit++)
-                {
-                    mask |= (1 << numbers[bit]);
-                }
-                float prob_of_last_bit = (nof_bits_to_set - floor(nof_bits_to_set));
-                if (rng.randExc() < prob_of_last_bit)
-                {
-                    mask |= (1 << numbers[int(nof_bits_to_set)]);
-                }
+		SAFE_RELEASE(m_pRndTexture);
+		pd3dDevice->CreateTexture2D(&texDesc, &srDesc, &m_pRndTexture);
 
-                allmasks[y * RANDOM_SIZE + x] = mask;
-            }
-        }
+		SAFE_RELEASE(m_pRndTextureSRV);
+		pd3dDevice->CreateShaderResourceView(m_pRndTexture, NULL, &m_pRndTextureSRV);
 
-        D3D11_TEXTURE2D_DESC texDesc;
-        texDesc.Width            = RANDOM_SIZE;
-        texDesc.Height           = ALPHA_VALUES + 1;
-        texDesc.MipLevels        = 1;
-        texDesc.ArraySize        = 1;
-        texDesc.Format           = DXGI_FORMAT_R32_UINT;
-        texDesc.SampleDesc.Count = 1;
-        texDesc.SampleDesc.Quality = 0;
-        texDesc.Usage            = D3D11_USAGE_IMMUTABLE;
-        texDesc.BindFlags        = D3D11_BIND_SHADER_RESOURCE;
-        texDesc.CPUAccessFlags   = 0;
-        texDesc.MiscFlags        = 0;
+		delete[] allmasks;
+	}
 
-        D3D11_SUBRESOURCE_DATA srDesc;
-        srDesc.pSysMem          = allmasks;
-        srDesc.SysMemPitch      = texDesc.Width * sizeof(unsigned int);
-        srDesc.SysMemSlicePitch = 0;
-
-        SAFE_RELEASE(m_pRndTexture);
-        pd3dDevice->CreateTexture2D(&texDesc, &srDesc, &m_pRndTexture);
-
-        SAFE_RELEASE(m_pRndTextureSRV);
-        pd3dDevice->CreateShaderResourceView(m_pRndTexture, NULL, &m_pRndTextureSRV);
-
-        delete[] allmasks;
-    }
-
-    void CreateFrameBuffer(ID3D11Device* pd3dDevice, UINT Width, UINT Height)
-    {
+	void CreateFrameBuffer(ID3D11Device* pd3dDevice, UINT Width, UINT Height)
+	{
 		//MSAA For Stochastic Is Irrelevant To MSAA For Spatial Antialiasing 
 
 		{
@@ -428,11 +411,11 @@ protected:
 			texDesc.Usage = D3D11_USAGE_DEFAULT;
 			texDesc.CPUAccessFlags = NULL;
 
-			m_pTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R8_UNORM);
-			m_pAccumulationRenderTarget = new SimpleRT(pd3dDevice, &texDesc, STOCHASTIC_COLOR_FORMAT);
 			m_pBackgroundRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
+			m_pStochasticColorAndCorrectTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
+			m_pStochasticTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R16_FLOAT); //STOCHASTIC_COLOR_FORMAT;
 		}
-      
+
 		{
 			D3D11_TEXTURE2D_DESC texDesc;
 			texDesc.ArraySize = 1;
@@ -448,8 +431,8 @@ protected:
 			texDesc.Usage = D3D11_USAGE_DEFAULT;
 			m_pBackgroundDepth = new SimpleDepthStencil(pd3dDevice, &texDesc);
 		}
-		
-    }
+
+	}
 
 	void CreateStochasticDepth(ID3D11Device* pd3dDevice, UINT Width, UINT Height)
 	{
@@ -457,18 +440,16 @@ protected:
 	}
 	SimpleRT *m_pBackgroundRenderTarget;
 	SimpleDepthStencil *m_pBackgroundDepth;
-	SimpleRT *m_pTotalAlphaRenderTarget;
-    SimpleRT *m_pAccumulationRenderTarget;
 	StochasticDepth *m_pStochasticDepth;
+	SimpleRT *m_pStochasticColorAndCorrectTotalAlphaRenderTarget;
+	SimpleRT *m_pStochasticTotalAlphaRenderTarget;
 
-	ID3D11PixelShader *m_pTotalAlphaPS;
 	ID3D11PixelShader *m_pStochasticDepthPS;
-	ID3D11PixelShader *m_pAccumulationPS;
+	ID3D11PixelShader *m_pTotalAlphaAndAccumulatePS;
 	ID3D11PixelShader *m_pCompositePS;
 
 	ID3D11Texture2D *m_pRndTexture;
 	ID3D11ShaderResourceView *m_pRndTextureSRV;
 
-	ID3D11BlendState *m_pAdditiveBlendingBS;
-	ID3D11BlendState *m_pTransmittanceBS;
+	ID3D11BlendState *m_pTotalAlphaAndAccumulateBS;
 };
