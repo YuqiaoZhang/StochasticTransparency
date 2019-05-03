@@ -90,21 +90,21 @@ protected:
 class SimpleDepthStencil
 {
 public:
-    ID3D11Texture2D* pTexture;
-    ID3D11DepthStencilView* pDSV;
+	ID3D11Texture2D *pTexture;
+	ID3D11DepthStencilView *pDSV;
 
-    SimpleDepthStencil( ID3D11Device* pd3dDevice, D3D11_TEXTURE2D_DESC* pTexDesc )
-       : pTexture(NULL)
-       , pDSV(NULL)
-    {
-        HRESULT hr;
-        V( pd3dDevice->CreateTexture2D(pTexDesc, NULL, &pTexture) );
-        V( pd3dDevice->CreateDepthStencilView(pTexture, NULL, &pDSV) );
-    }
+	SimpleDepthStencil(ID3D11Device* pd3dDevice, D3D11_TEXTURE2D_DESC* pTexDesc)
+		: pTexture(NULL)
+		, pDSV(NULL)
+	{
+		HRESULT hr;
+		V(pd3dDevice->CreateTexture2D(pTexDesc, NULL, &pTexture));
+		V(pd3dDevice->CreateDepthStencilView(pTexture, NULL, &pDSV));
+	}
 
-    ~SimpleDepthStencil()
-    {
-        SAFE_RELEASE(pTexture);
-        SAFE_RELEASE(pDSV);
-    }
+	~SimpleDepthStencil()
+	{
+		SAFE_RELEASE(pTexture);
+		SAFE_RELEASE(pDSV);
+	}
 };
