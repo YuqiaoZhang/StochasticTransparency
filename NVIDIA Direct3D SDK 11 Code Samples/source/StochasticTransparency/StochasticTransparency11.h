@@ -273,11 +273,14 @@ protected:
 		V(DXUTFindDXSDKMediaFileCch(ShaderPath, MAX_PATH, L"StochasticTransparency11.hlsl"));
 
 		LPD3DXBUFFER pBlob;
-		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "StochasticDepthPS", "ps_5_0", 0, &pBlob, NULL, NULL));
+		LPD3DXBUFFER pBloberr;
+		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "StochasticDepthPS", "ps_5_0", 0, &pBlob, &pBloberr, NULL));
+		
+		//char *p=(char*)pBloberr->GetBufferPointer();
 		V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pStochasticDepthPS));
 		pBlob->Release();
 
-		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "TotalAlphaAndAccumulatePS", "ps_5_0", 0, &pBlob, NULL, NULL));
+		V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "TotalAlphaAndAccumulatePS", "ps_5_0", D3DXSHADER_DEBUG | D3DXSHADER_SKIPOPTIMIZATION, &pBlob, NULL, NULL));
 		V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pTotalAlphaAndAccumulatePS));
 		pBlob->Release();
 
@@ -420,7 +423,7 @@ protected:
 
 			m_pBackgroundRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
 			m_pStochasticColorAndCorrectTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
-			m_pStochasticTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R16_FLOAT); //STOCHASTIC_COLOR_FORMAT;
+			m_pStochasticTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R32_FLOAT); //STOCHASTIC_COLOR_FORMAT;
 		}
 
 		{
