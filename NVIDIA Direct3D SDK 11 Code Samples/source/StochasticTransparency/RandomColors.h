@@ -19,7 +19,7 @@ inline float mix(float x, float y, float a)
     return x * (1.0f - a) + y * a;
 }
 
-void ComputeRandomColor(UINT subsetId, D3DXVECTOR3 &OutputColor)
+void ComputeRandomColor(UINT subsetId, DirectX::XMFLOAT3 &OutputColor)
 {
     float h,s,v, r,g,b, h1,h3;
     h = fmodf((subsetId + 101) * 0.7182863f, 1.0f);

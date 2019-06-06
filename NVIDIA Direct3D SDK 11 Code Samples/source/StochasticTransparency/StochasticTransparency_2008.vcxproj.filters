@@ -1,46 +1,26 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{952fee56-2db1-4522-a7d6-70aa8da62c1c}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe</Extensions>
-    </Filter>
     <Filter Include="Techniques">
       <UniqueIdentifier>{01adfcc0-1574-41e4-9484-43e33f0592ac}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\media\directx.ico">
-      <Filter>Resource Files</Filter>
-    </None>
-    <None Include="BaseTechnique.hlsl">
+    <None Include="BaseTechnique.hlsli">
       <Filter>Techniques</Filter>
     </None>
-    <None Include="DualDepthPeeling11.hlsl">
+    <None Include="DualDepthPeeling.hlsli">
       <Filter>Techniques</Filter>
     </None>
-    <None Include="PlainAlphaBlending.hlsl">
+    <None Include="StochasticTransparency.hlsli">
       <Filter>Techniques</Filter>
     </None>
-    <None Include="StochasticTransparency11.hlsl">
+    <None Include="PlainAlphaBlending.hlsli">
       <Filter>Techniques</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Manifest Include="OIT.manifest">
-      <Filter>Resource Files</Filter>
-    </Manifest>
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="OIT.rc">
-      <Filter>Resource Files</Filter>
-    </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BaseTechnique.h">
-      <Filter>Techniques</Filter>
-    </ClInclude>
-    <ClInclude Include="DualDepthPeeling11.h">
       <Filter>Techniques</Filter>
     </ClInclude>
     <ClInclude Include="PlainAlphaBlending.h">
@@ -49,14 +29,52 @@
     <ClInclude Include="RandomColors.h">
       <Filter>Techniques</Filter>
     </ClInclude>
-    <ClInclude Include="StochasticTransparency11.h">
-      <Filter>Techniques</Filter>
-    </ClInclude>
     <ClInclude Include="MersenneTwister.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="SimpleRT.h" />
+    <ClInclude Include="StochasticTransparency.h">
+      <Filter>Techniques</Filter>
+    </ClInclude>
+    <ClInclude Include="DualDepthPeeling.h">
+      <Filter>Techniques</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="BaseTechnique_GeometryVS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="BaseTechnique_FullScreenTriangleVS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="DualDepthPeeling_DDPFirstPassPS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="DualDepthPeeling_DDPBlendingPS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="DualDepthPeeling_DDPDepthPeelPS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="DualDepthPeeling_DDPFinalPS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="StochasticTransparency_StochasticDepthPS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="StochasticTransparency_AccumulateAndTotalAlphaPS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="StochasticTransparency_CompositePS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="PlainAlphaBlending_ShadingPS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
+    <FxCompile Include="PlainAlphaBlending_FinalPS.hlsl">
+      <Filter>Techniques</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

@@ -28,8 +28,8 @@ ID3DUserDefinedAnnotation : public IUnknown
 	virtual BOOL STDMETHODCALLTYPE GetStatus(void) = 0;
 };
 #endif
-#include "DualDepthPeeling11.h"
-#include "StochasticTransparency11.h"
+#include "DualDepthPeeling.h"
+#include "StochasticTransparency.h"
 #include "PlainAlphaBlending.h"
 #include <strsafe.h>
 
@@ -58,7 +58,7 @@ CDXUTDialog                 g_HUD;                      // dialog for standard c
 CDXUTDialog                 g_SampleUI;                 // dialog for sample specific controls
 CDXUTTextHelper*            g_pTxtHelper = NULL;
 bool                        g_ShowUI = true;
-D3DXVECTOR3                 g_ModelOffset;
+DirectX::XMFLOAT3           g_ModelOffset;
 
 TechniqueUI                 g_Techniques[NUM_TECHNIQUES];
 StochasticTransparency      *g_pStochasticTransparency = NULL;
@@ -147,22 +147,22 @@ void CALLBACK OnKeyboard(UINT nChar, bool bKeyDown, bool bAltDown, void* pUserCo
             g_ShowUI = !g_ShowUI;
             break;
         case 'A':
-            g_ModelOffset[0] -= WORLD_OFFSET;
+            g_ModelOffset.x -= WORLD_OFFSET;
             break;
         case 'D':
-            g_ModelOffset[0] += WORLD_OFFSET;
+            g_ModelOffset.x += WORLD_OFFSET;
             break;
         case 'W':
-            g_ModelOffset[1] += WORLD_OFFSET;
+            g_ModelOffset.y += WORLD_OFFSET;
             break;
         case 'S':
-            g_ModelOffset[1] -= WORLD_OFFSET;
+            g_ModelOffset.y -= WORLD_OFFSET;
             break;
         case 'Q':
-            g_ModelOffset[2] -= WORLD_OFFSET;
+            g_ModelOffset.z -= WORLD_OFFSET;
             break;
         case 'E':
-            g_ModelOffset[2] += WORLD_OFFSET;
+            g_ModelOffset.z += WORLD_OFFSET;
             break;
         }
     }
@@ -250,9 +250,7 @@ void InitGUI()
 // to return valid device settings, otherwise CreateDevice() will fail.  
 //--------------------------------------------------------------------------------------
 bool CALLBACK ModifyDeviceSettings(DXUTDeviceSettings* pDeviceSettings, void* pUserContext)
-{
-    assert(pDeviceSettings->ver == DXUT_D3D11_DEVICE);
-    
+{    
     // Disable vsync
     pDeviceSettings->d3d11.SyncInterval = 0;
 
@@ -261,12 +259,8 @@ bool CALLBACK ModifyDeviceSettings(DXUTDeviceSettings* pDeviceSettings, void* pU
     if(s_bFirstTime)
     {
         s_bFirstTime = false;
-        if((DXUT_D3D9_DEVICE == pDeviceSettings->ver && pDeviceSettings->d3d9.DeviceType == D3DDEVTYPE_REF) ||
-           (DXUT_D3D11_DEVICE == pDeviceSettings->ver &&
-            pDeviceSettings->d3d11.DriverType == D3D_DRIVER_TYPE_REFERENCE))
-        {
-            DXUTDisplaySwitchingToREFWarning(pDeviceSettings->ver);
-        }
+		pDeviceSettings->d3d11.CreateFlags = 0; //D3D11_CREATE_DEVICE_DEBUG
+		pDeviceSettings->d3d11.sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     }
 
     return true;
@@ -291,7 +285,7 @@ void RenderText()
 {
     g_pTxtHelper->Begin();
     g_pTxtHelper->SetInsertionPos(2, 0);
-    g_pTxtHelper->SetForegroundColor(D3DXCOLOR(0.0f, 0.0f, 0.0f, 1.0f));
+    g_pTxtHelper->SetForegroundColor(DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f));
     g_pTxtHelper->DrawTextLine(DXUTGetFrameStats(DXUTIsVsyncEnabled()));
     g_pTxtHelper->DrawTextLine(DXUTGetDeviceStats());
 
@@ -414,7 +408,7 @@ HRESULT CALLBACK OnD3D11ResizedSwapChain(ID3D11Device* pd3dDevice, IDXGISwapChai
 
     // Setup the camera's projection parameters    
     float fAspectRatio = pBackBufferSurfaceDesc->Width / (FLOAT)pBackBufferSurfaceDesc->Height;
-    g_Camera.SetProjParams(D3DX_PI / 4, fAspectRatio, ZNEAR, ZFAR);
+    g_Camera.SetProjParams(DirectX::XM_PI / 4, fAspectRatio, ZNEAR, ZFAR);
     g_Camera.SetWindow(pBackBufferSurfaceDesc->Width, pBackBufferSurfaceDesc->Height);
 
     g_HUD.SetLocation(pBackBufferSurfaceDesc->Width - 170, 0);
@@ -471,52 +465,58 @@ void UpdateUI()
 }
 
 //--------------------------------------------------------------------------------------
-D3DXMATRIX OffsetWorldMatrix()
+DirectX::XMMATRIX OffsetWorldMatrix()
 {
-    D3DXMATRIX TranslationMatrix;
-    D3DXMatrixTranslation( &TranslationMatrix, g_ModelOffset[0], g_ModelOffset[1], g_ModelOffset[2]);
-    D3DXMATRIX WorldMatrix = TranslationMatrix * (*g_Camera.GetWorldMatrix());
+	DirectX::XMMATRIX TranslationMatrix;
+	TranslationMatrix = DirectX::XMMatrixTranslation(g_ModelOffset.x, g_ModelOffset.y, g_ModelOffset.z);
+	DirectX::XMMATRIX WorldMatrix = TranslationMatrix * (g_Camera.GetWorldMatrix());
 
     static float s_Angle = 0.0f;
     if (g_SampleUI.GetCheckBox(IDC_AUTO_ROTATE)->GetChecked())
     {
         s_Angle += AUTO_ROTATION_RATE / DXUTGetFPS();
-        if (s_Angle > D3DX_PI*2.0f) s_Angle = 0.0;
+        if (s_Angle > DirectX::XM_PI*2.0f) s_Angle = 0.0;
     }
 
-    D3DXMATRIX mWorld;
-    D3DXMATRIX mRotation;
-    D3DXMatrixRotationY(&mRotation, s_Angle + D3DX_PI);
-    D3DXMatrixMultiply(&mWorld, &mRotation, &WorldMatrix);
-    return mWorld;
+	DirectX::XMMATRIX mWorld;
+    DirectX::XMMATRIX mRotation;
+	mRotation = DirectX::XMMatrixRotationY(s_Angle + DirectX::XM_PI);
+	mWorld = DirectX::XMMatrixMultiply(mRotation, WorldMatrix);
+	return mWorld;
 }
 
 //--------------------------------------------------------------------------------------
 void UpdateMatrices()
 {
-    D3DXMATRIX mProj = *g_Camera.GetProjMatrix();
-    D3DXMATRIX mView = *g_Camera.GetViewMatrix();
-    D3DXMATRIX mWorld = OffsetWorldMatrix();
+    DirectX::XMMATRIX mProj = g_Camera.GetProjMatrix();
+	DirectX::XMMATRIX mView = g_Camera.GetViewMatrix();
+	DirectX::XMMATRIX mWorld = OffsetWorldMatrix();
 
-    D3DXMATRIX mViewI, mViewIT, mViewProj, mViewProjI;
-    D3DXMATRIX mWorldI, mWorldIT;
-    D3DXMATRIX mWorldView, mWorldViewI, mWorldViewIT;
-    D3DXMATRIX mWorldViewProj, mWorldViewProjI;
-    D3DXMatrixInverse(&mViewI, NULL, &mView);
-    D3DXMatrixTranspose(&mViewIT, &mViewI);
-    D3DXMatrixMultiply(&mViewProj, &mView, &mProj);
-    D3DXMatrixInverse(&mViewProjI, NULL, &mViewProj);
-    D3DXMatrixInverse(&mWorldI, NULL, &mWorld);
-    D3DXMatrixTranspose(&mWorldIT, &mWorldI);
-    D3DXMatrixMultiply(&mWorldView, &mWorld, &mView);
-    D3DXMatrixInverse(&mWorldViewI, NULL, &mWorldView);
-    D3DXMatrixTranspose(&mWorldViewIT, &mWorldViewI);
-    D3DXMatrixMultiply(&mWorldViewProj, &mWorldView, &mProj);
-    D3DXMatrixInverse(&mWorldViewProjI, NULL, &mWorldViewProj);
+	DirectX::XMMATRIX mViewI, mViewIT, mViewProj, mViewProjI;
+	DirectX::XMMATRIX mWorldI, mWorldIT;
+	DirectX::XMMATRIX mWorldView, mWorldViewI, mWorldViewIT;
+	DirectX::XMMATRIX mWorldViewProj, mWorldViewProjI;
+
+	mViewI = DirectX::XMMatrixInverse(NULL, mView);
+	mViewIT = DirectX::XMMatrixTranspose(mViewI);
+	mViewProj = DirectX::XMMatrixMultiply(mView, mProj);
+	mViewProjI = DirectX::XMMatrixInverse(NULL, mViewProj);
+	mWorldI = DirectX::XMMatrixInverse(NULL, mWorld);
+	mWorldIT = DirectX::XMMatrixTranspose(mWorldI);
+	mWorldView = DirectX::XMMatrixMultiply(mWorld, mView);
+	mWorldViewI = DirectX::XMMatrixInverse(NULL, mWorldView);
+	mWorldViewIT = DirectX::XMMatrixTranspose(mWorldViewI);
+	mWorldViewProj = DirectX::XMMatrixMultiply(mWorldView, mProj);
+	mWorldViewProjI = DirectX::XMMatrixInverse(NULL, mWorldViewProj);
+
+	DirectX::XMFLOAT4X4 ModelViewProj;
+	DirectX::XMFLOAT4X4 ModelViewIT;
+	DirectX::XMStoreFloat4x4(&ModelViewProj, mWorldViewProj);
+	DirectX::XMStoreFloat4x4(&ModelViewIT, mWorldViewIT);
 
     for (int i = 0; i < NUM_TECHNIQUES; ++i)
     {
-        g_Techniques[i].pEngine->UpdateMatrices(mWorldViewProj, mWorldViewIT);
+        g_Techniques[i].pEngine->UpdateMatrices(ModelViewProj, ModelViewIT);
     }
 }
 

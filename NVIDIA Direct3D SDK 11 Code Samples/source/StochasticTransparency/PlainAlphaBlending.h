@@ -17,6 +17,9 @@
 #include "BaseTechnique.h"
 #include "Scene.h"
 
+#include "PlainAlphaBlending_ShadingPS.h"
+#include "PlainAlphaBlending_FinalPS.h"
+
 #define NUM_MSAA_SAMPLES 8
 
 class PlainAlphaBlending : public BaseTechnique, public Scene
@@ -102,17 +105,9 @@ protected:
     {
         HRESULT hr;
 
-        WCHAR ShaderPath[MAX_PATH];
-        V( DXUTFindDXSDKMediaFileCch( ShaderPath, MAX_PATH, L"PlainAlphaBlending.hlsl" ) );
+        V( pd3dDevice->CreatePixelShader(g_ShadingPS, sizeof(g_ShadingPS), NULL, &m_pShadingPS ) );
 
-        LPD3DXBUFFER pBlob;
-        V( D3DXCompileShaderFromFile( ShaderPath, NULL, NULL, "ShadingPS", "ps_5_0", 0, &pBlob, NULL, NULL ) );
-        V( pd3dDevice->CreatePixelShader( (DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pShadingPS ) );
-        pBlob->Release();
-
-        V( D3DXCompileShaderFromFile( ShaderPath, NULL, NULL, "FinalPS", "ps_5_0", 0, &pBlob, NULL, NULL ) );
-        V( pd3dDevice->CreatePixelShader( (DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pFinalPS ) );
-        pBlob->Release();
+        V( pd3dDevice->CreatePixelShader(g_FinalPS, sizeof(g_FinalPS), NULL, &m_pFinalPS ) );
     }
 
     void CreateRenderTargets(ID3D11Device* pd3dDevice, UINT Width, UINT Height)
