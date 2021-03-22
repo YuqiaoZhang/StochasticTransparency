@@ -74,8 +74,8 @@ CDXUTSDKMesh                Scene::m_Mesh;
 // Defines
 //--------------------------------------------------------------------------------------
 
-#define IMAGE_WIDTH 1024
-#define IMAGE_HEIGHT 1024
+#define IMAGE_WIDTH 1280
+#define IMAGE_HEIGHT 720
 
 #define ZNEAR 0.1f
 #define ZFAR 100.0f
