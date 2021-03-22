@@ -83,17 +83,15 @@ public:
         : BaseTechnique(pd3dDevice)
         , m_pBackgroundRenderTarget(NULL)
         , m_pBackgroundDepth(NULL)
-		, m_pTotalAlphaRenderTarget(NULL)
-		, m_pAccumulationRenderTarget(NULL)
+		, m_pStochasticColorAndCorrectTotalAlphaRenderTarget(NULL)
+		, m_pStochasticTotalAlphaRenderTarget(NULL)
 		, m_pStochasticDepth(NULL)
-		, m_pTotalAlphaPS(NULL)
 		, m_pStochasticDepthPS(NULL)
-		, m_pAccumulationPS(NULL)
+		, m_pTotalAlphaAndAccumulatePS(NULL)
 		, m_pCompositePS(NULL)
         , m_pRndTexture(NULL)
         , m_pRndTextureSRV(NULL)
-        , m_pAdditiveBlendingBS(NULL)
-        , m_pTransmittanceBS(NULL)
+        , m_pTotalAlphaAndAccumulateBS(NULL)
     {
 		CreateFrameBuffer(pd3dDevice, Width, Height);
 		CreateStochasticDepth(pd3dDevice, Width, Height);
@@ -134,27 +132,6 @@ public:
         pd3dImmediateContext->PSSetConstantBuffers(0, 1, &m_pParamsCB);
         pd3dImmediateContext->PSSetConstantBuffers(1, 1, &m_pShadingParamsCB);
 
-        //TODO: The two passes TotalAlphaPass and AccumulationPass can be merged!
-
-        //----------------------------------------------------------------------------------
-        // 2. Render total transmittance
-        //----------------------------------------------------------------------------------
-		pPerf->BeginEvent(L"Total Alpha Pass");
-
-        float ClearColorAlpha[4] = { 1.0f };
-        pd3dImmediateContext->ClearRenderTargetView(m_pTotalAlphaRenderTarget->pRTV, ClearColorAlpha);
-
-		//Should Pass Background Depth
-        pd3dImmediateContext->OMSetRenderTargets(1, &m_pTotalAlphaRenderTarget->pRTV, NULL);
-        pd3dImmediateContext->OMSetBlendState(m_pTransmittanceBS, m_BlendFactor, 0xffffffff);
-        pd3dImmediateContext->OMSetDepthStencilState(m_pNoDepthNoStencilDS, 0);
-
-        pd3dImmediateContext->PSSetShader(m_pTotalAlphaPS, NULL, 0);
-
-        DrawMesh(pd3dImmediateContext, m_Mesh);
-
-		pPerf->EndEvent();
-
 		//By the limit of the hardware, the maximum sample count of MSAA is 8X MSAA.
 		//The author proposed that we can use multiple passes to simulate more sample counts.
 		//Due to the performance issue, we only use one pass.
@@ -164,10 +141,12 @@ public:
             pd3dImmediateContext->UpdateSubresource(m_pParamsCB, 0, NULL, &CBData, 0, 0);
 
             //----------------------------------------------------------------------------------
-            // 3. Render MSAA "stochastic depths", writting SV_Coverage in the pixel shader
+            // 2. Render MSAA "stochastic depths", writting SV_Coverage in the pixel shader
             //----------------------------------------------------------------------------------
 			pPerf->BeginEvent(L"Stochastic Depth Pass");
 
+            //In Application, We Should Copy From Background Depth To Stochastic Depth
+            //We Simplify This In The Sample.
             pd3dImmediateContext->ClearDepthStencilView(m_pStochasticDepth->pDSV, D3D11_CLEAR_DEPTH, 1.0, 0);
 
             pd3dImmediateContext->OMSetRenderTargets(0, NULL, m_pStochasticDepth->pDSV);
@@ -182,21 +161,29 @@ public:
 			pPerf->EndEvent();
 
             //----------------------------------------------------------------------------------
-            // 4. Render colors in front of the Opaque Background with additive blending
+            // 3. We Merge TotalAlpha And Accumulate Together
             //----------------------------------------------------------------------------------
-			pPerf->BeginEvent(L"Accumulation Pass");
+			pPerf->BeginEvent(L"TotalAlpha And Accumulate Pass");
 
-            float Zero[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-            pd3dImmediateContext->ClearRenderTargetView(m_pAccumulationRenderTarget->pRTV, Zero);
+            float ClearStochasticColorAndCorrectTotalAlpha[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+            pd3dImmediateContext->ClearRenderTargetView(m_pStochasticColorAndCorrectTotalAlphaRenderTarget->pRTV, ClearStochasticColorAndCorrectTotalAlpha);
+
+            float ClearStochasticTotalAlpha[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            pd3dImmediateContext->ClearRenderTargetView(m_pStochasticTotalAlphaRenderTarget->pRTV, ClearStochasticTotalAlpha);
 
 			//UnBind Stochastic Depth
 			//DSV->SRV
-            pd3dImmediateContext->OMSetRenderTargets(1, &m_pAccumulationRenderTarget->pRTV, m_pBackgroundDepth->pDSV);
-            
-			pd3dImmediateContext->OMSetBlendState(m_pAdditiveBlendingBS, m_BlendFactor, 0xffffffff);
+            ID3D11RenderTargetView *pRTVs[2] =
+            {
+            	m_pStochasticColorAndCorrectTotalAlphaRenderTarget->pRTV,
+            	m_pStochasticTotalAlphaRenderTarget->pRTV
+            };
+            pd3dImmediateContext->OMSetRenderTargets(2, pRTVs, m_pBackgroundDepth->pDSV);
+
+			pd3dImmediateContext->OMSetBlendState(m_pTotalAlphaAndAccumulateBS, m_BlendFactor, 0xffffffff);
             pd3dImmediateContext->OMSetDepthStencilState(m_pDepthNoWriteDS, 0);
 
-			pd3dImmediateContext->PSSetShader(m_pAccumulationPS, NULL, 0);
+			pd3dImmediateContext->PSSetShader(m_pTotalAlphaAndAccumulatePS, NULL, 0);
 
 			ID3D11ShaderResourceView *pSRVs[1] =
 			{
@@ -214,7 +201,7 @@ public:
         // 5. Final full-screen pass, blending the transparent colors over the background
         //----------------------------------------------------------------------------------
 		pPerf->BeginEvent(L"Composite Pass"); //Total Alpha Correction And Under Operator
-		
+
         pd3dImmediateContext->OMSetRenderTargets(1, &pBackBuffer, NULL);
         pd3dImmediateContext->OMSetDepthStencilState(m_pNoDepthNoStencilDS, 0);
         pd3dImmediateContext->OMSetBlendState(m_pNoBlendBS, m_BlendFactor, 0xffffffff);
@@ -225,8 +212,8 @@ public:
 		ID3D11ShaderResourceView *pSRVs[3] =
 		{
 			m_pBackgroundRenderTarget->pSRV,
-			m_pTotalAlphaRenderTarget->pSRV,
-			m_pAccumulationRenderTarget->pSRV
+			m_pStochasticColorAndCorrectTotalAlphaRenderTarget->pSRV,
+			m_pStochasticTotalAlphaRenderTarget->pSRV
 		};
         pd3dImmediateContext->PSSetShaderResources(0, 3, pSRVs);
 
@@ -256,17 +243,15 @@ public:
     {
 		SAFE_DELETE(m_pBackgroundRenderTarget);
 		SAFE_DELETE(m_pBackgroundDepth);
-		SAFE_DELETE(m_pTotalAlphaRenderTarget);
-		SAFE_DELETE(m_pAccumulationRenderTarget);
 		SAFE_DELETE(m_pStochasticDepth);
-		SAFE_RELEASE(m_pTotalAlphaPS);
+		SAFE_DELETE(m_pStochasticColorAndCorrectTotalAlphaRenderTarget);
+        SAFE_DELETE(m_pStochasticTotalAlphaRenderTarget);
 		SAFE_RELEASE(m_pStochasticDepthPS);
-		SAFE_RELEASE(m_pAccumulationPS);
+		SAFE_RELEASE(m_pTotalAlphaAndAccumulatePS);
 		SAFE_RELEASE(m_pCompositePS);
         SAFE_RELEASE(m_pRndTexture);
         SAFE_RELEASE(m_pRndTextureSRV);
-        SAFE_RELEASE(m_pAdditiveBlendingBS);
-        SAFE_RELEASE(m_pTransmittanceBS);
+        SAFE_RELEASE(m_pTotalAlphaAndAccumulateBS);
         SAFE_RELEASE(m_pDepthNoWriteDS);
 
     }
@@ -280,17 +265,12 @@ protected:
         V( DXUTFindDXSDKMediaFileCch( ShaderPath, MAX_PATH, L"StochasticTransparency11.hlsl" ) );
 
         LPD3DXBUFFER pBlob;
-        LPD3DXBUFFER pBlobError;
-        V( D3DXCompileShaderFromFile( ShaderPath, NULL, NULL, "TotalAlphaPS", "ps_5_0", 0, &pBlob, &pBlobError, NULL ) );
-        V( pd3dDevice->CreatePixelShader( (DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pTotalAlphaPS) );
+        V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "StochasticDepthPS", "ps_5_0", 0, &pBlob, NULL, NULL));
+        V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pStochasticDepthPS));
         pBlob->Release();
 
-        V( D3DXCompileShaderFromFile( ShaderPath, NULL, NULL, "StochasticDepthPS", "ps_5_0", 0, &pBlob, NULL, NULL ) );
-        V( pd3dDevice->CreatePixelShader( (DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pStochasticDepthPS) );
-        pBlob->Release();
-
-        V( D3DXCompileShaderFromFile( ShaderPath, NULL, NULL, "AccumulationPS", "ps_5_0", 0, &pBlob, NULL, NULL ) );
-        V( pd3dDevice->CreatePixelShader( (DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pAccumulationPS) );
+        V(D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "TotalAlphaAndAccumulatePS", "ps_5_0", 0, &pBlob, NULL, NULL));
+        V(pd3dDevice->CreatePixelShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pTotalAlphaAndAccumulatePS));
         pBlob->Release();
 
 
@@ -302,40 +282,43 @@ protected:
     void CreateBlendStates(ID3D11Device* pd3dDevice)
     {
         D3D11_BLEND_DESC BlendStateDesc;
+        //To ensure uncorrelated, the AlphaToCoverage can't be used
         BlendStateDesc.AlphaToCoverageEnable = FALSE;
-        BlendStateDesc.IndependentBlendEnable = FALSE;
-        for (int i = 0; i < 8; ++i)
-        {
-            BlendStateDesc.RenderTarget[i].BlendEnable = FALSE;
-            BlendStateDesc.RenderTarget[i].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-        }
 
+        //0 For Accumulate
+        //1 For TotalAlpha
+        BlendStateDesc.IndependentBlendEnable = TRUE;
+
+        //DestColor/*ToRT*/ = BlendOp(DestBlend*DestColor/*FromRT*/, SrcBlend*SrcColor/*FromPS*/)
+        //DestAlpha/*ToRT*/ = BlendOpAlpha(DestBlendAlpha*DestAlpha/*FromRT*/, SrcBlendAlpha*SrcAlpha/*FromPS*/)
+
+        //StochasticColor+CorrectTotalAlpha
         BlendStateDesc.RenderTarget[0].BlendEnable = TRUE;
-        BlendStateDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-
-        // Create m_pAdditiveBlendingBS
-        // dst.rgba += src.rgba
-
         BlendStateDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
         BlendStateDesc.RenderTarget[0].DestBlend = D3D11_BLEND_ONE;
         BlendStateDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-
-        BlendStateDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-        BlendStateDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE;
+        BlendStateDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO;
+        BlendStateDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
         BlendStateDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        BlendStateDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 
-        pd3dDevice->CreateBlendState(&BlendStateDesc, &m_pAdditiveBlendingBS);
+        //StochasticTotalAlpha
+        BlendStateDesc.RenderTarget[1].BlendEnable = TRUE;
+        BlendStateDesc.RenderTarget[1].SrcBlend = D3D11_BLEND_ONE;
+        BlendStateDesc.RenderTarget[1].DestBlend = D3D11_BLEND_ONE;
+        BlendStateDesc.RenderTarget[1].BlendOp = D3D11_BLEND_OP_ADD;
+        BlendStateDesc.RenderTarget[1].SrcBlendAlpha = D3D11_BLEND_ONE;
+        BlendStateDesc.RenderTarget[1].DestBlendAlpha = D3D11_BLEND_ONE;
+        BlendStateDesc.RenderTarget[1].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        BlendStateDesc.RenderTarget[1].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
 
-        // Create m_pTransmittanceBS
-        // dst.r *= (1.0 - src.r)
+        for (int i = 2; i < 8; ++i)
+        {
+        	BlendStateDesc.RenderTarget[i].BlendEnable = FALSE;
+        	BlendStateDesc.RenderTarget[i].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        }
 
-        BlendStateDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_ZERO;
-        BlendStateDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_COLOR;
-        BlendStateDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-
-        pd3dDevice->CreateBlendState(&BlendStateDesc, &m_pTransmittanceBS);
-
-
+        pd3dDevice->CreateBlendState(&BlendStateDesc, &m_pTotalAlphaAndAccumulateBS);
     }
 
     void CreateRandomBitmasks(ID3D11Device* pd3dDevice)
@@ -423,9 +406,9 @@ protected:
         texDesc.Usage = D3D11_USAGE_DEFAULT;
         texDesc.CPUAccessFlags = NULL;
 
-        m_pTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R8_UNORM);
-        m_pAccumulationRenderTarget = new SimpleRT(pd3dDevice, &texDesc, STOCHASTIC_COLOR_FORMAT);
         m_pBackgroundRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
+        m_pStochasticColorAndCorrectTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
+        m_pStochasticTotalAlphaRenderTarget = new SimpleRT(pd3dDevice, &texDesc, DXGI_FORMAT_R16_FLOAT); //STOCHASTIC_COLOR_FORMAT;
         }
 
         {
@@ -452,18 +435,15 @@ protected:
 	
 	SimpleRT *m_pBackgroundRenderTarget;
 	SimpleDepthStencil *m_pBackgroundDepth;
-	SimpleRT *m_pTotalAlphaRenderTarget;
-    SimpleRT *m_pAccumulationRenderTarget;
-	StochasticDepth *m_pStochasticDepth;
+	SimpleRT *m_pStochasticColorAndCorrectTotalAlphaRenderTarget;
+    SimpleRT *m_pStochasticTotalAlphaRenderTarget;
 
-	ID3D11PixelShader *m_pTotalAlphaPS;
 	ID3D11PixelShader *m_pStochasticDepthPS;
-	ID3D11PixelShader *m_pAccumulationPS;
+	ID3D11PixelShader *m_pTotalAlphaAndAccumulatePS;
 	ID3D11PixelShader *m_pCompositePS;
 
 	ID3D11Texture2D *m_pRndTexture;
 	ID3D11ShaderResourceView *m_pRndTextureSRV;
 
-	ID3D11BlendState *m_pAdditiveBlendingBS;
-	ID3D11BlendState *m_pTransmittanceBS;
+	ID3D11BlendState *m_pTotalAlphaAndAccumulateBS;
 };
