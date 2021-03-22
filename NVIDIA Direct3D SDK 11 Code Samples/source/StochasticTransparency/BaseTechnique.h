@@ -17,6 +17,9 @@
 #include "SDKmesh.h"
 #include "RandomColors.h"
 
+#include "BaseTechnique_GeometryVS.h"
+#include "BaseTechnique_FullScreenTriangleVS.h"
+
 class BaseTechnique
 {
 public:
@@ -33,7 +36,7 @@ public:
         , m_pParamsCB(NULL)
         , m_pShadingParamsCB(NULL)
         , m_pInputLayout(NULL)
-        , m_BackgroundColor(D3DXVECTOR3(1.f,1.f,1.f))
+        , m_BackgroundColor(DirectX::XMFLOAT3(1.f,1.f,1.f))
     {
         CreateRasterizerState(pd3dDevice);
         CreateDepthStencilStates(pd3dDevice);
@@ -42,10 +45,10 @@ public:
         CreateConstantBuffers(pd3dDevice);
     }
 
-    void UpdateMatrices(D3DXMATRIX &ModelViewProj, D3DXMATRIX &ModelViewIT)
+    void UpdateMatrices(DirectX::XMFLOAT4X4 &ModelViewProj, DirectX::XMFLOAT4X4 &ModelViewIT)
     {
-        memcpy(&CBData.worldViewProj, &ModelViewProj, sizeof(D3DXMATRIX));
-        memcpy(&CBData.worldViewIT, &ModelViewIT, sizeof(D3DXMATRIX));
+        memcpy(&CBData.worldViewProj, &ModelViewProj, sizeof(DirectX::XMFLOAT4X4));
+        memcpy(&CBData.worldViewIT, &ModelViewIT, sizeof(DirectX::XMFLOAT4X4));
     }
 
     ~BaseTechnique()
@@ -87,7 +90,7 @@ public:
             D3D11_PRIMITIVE_TOPOLOGY PrimType = CDXUTSDKMesh::GetPrimitiveType11((SDKMESH_PRIMITIVE_TYPE)pSubset->PrimitiveType);
             pd3dImmediateContext->IASetPrimitiveTopology(PrimType);
 
-            D3DXVECTOR3 Color;
+            DirectX::XMFLOAT3 Color;
             ComputeRandomColor(SubsetId, Color);
 
             float data[4] = { Color.x, Color.y, Color.z, m_Alpha };
@@ -239,20 +242,12 @@ protected:
         };
         UINT NumElements = sizeof(InputLayoutDesc)/sizeof(InputLayoutDesc[0]);
 
-        WCHAR ShaderPath[MAX_PATH];
-        V( DXUTFindDXSDKMediaFileCch(ShaderPath, MAX_PATH, L"BaseTechnique.hlsl") );
-
         // Vertex shader and input layout for the geometry passes
-        LPD3DXBUFFER pBlob;
-        V( D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "GeometryVS", "vs_5_0", 0, &pBlob, NULL, NULL ));
-        V( pd3dDevice->CreateVertexShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pGeometryVS ));
-        V( pd3dDevice->CreateInputLayout(InputLayoutDesc, NumElements, pBlob->GetBufferPointer(), pBlob->GetBufferSize(), &m_pInputLayout));
-        pBlob->Release();
+		V(pd3dDevice->CreateVertexShader(g_GeometryVS, sizeof(g_GeometryVS), NULL, &m_pGeometryVS));
+		V(pd3dDevice->CreateInputLayout(InputLayoutDesc, NumElements, g_GeometryVS, sizeof(g_GeometryVS), &m_pInputLayout));
 
         // Vertex shader for the full-screen passes
-        V( D3DXCompileShaderFromFile(ShaderPath, NULL, NULL, "FullScreenTriangleVS", "vs_5_0", 0, &pBlob, NULL, NULL) );
-        V( pd3dDevice->CreateVertexShader((DWORD*)pBlob->GetBufferPointer(), pBlob->GetBufferSize(), NULL, &m_pFullScreenTriangleVS) );
-        pBlob->Release();
+        V( pd3dDevice->CreateVertexShader(g_FullScreenTriangleVS, sizeof(g_FullScreenTriangleVS), NULL, &m_pFullScreenTriangleVS) );
     }
 
     void CreateConstantBuffers(ID3D11Device* pd3dDevice)
@@ -285,14 +280,14 @@ protected:
     ID3D11Buffer *m_pShadingParamsCB;
     ID3D11InputLayout *m_pInputLayout;
     float m_BlendFactor[4];
-    D3DXVECTOR3 m_BackgroundColor;
+    DirectX::XMFLOAT3 m_BackgroundColor;
 
     // With D3D10 and 11, constant buffers need to be float4 aligned
     struct
     {
         // float4 aligned
-        D3DXMATRIX worldViewProj;
-        D3DXMATRIX worldViewIT;
+        DirectX::XMFLOAT4X4 worldViewProj;
+		DirectX::XMFLOAT4X4 worldViewIT;
         // float4 aligned
         UINT randMaskSizePowOf2MinusOne;
         UINT randMaskAlphaValues;
