@@ -105,7 +105,7 @@ struct Pixel_PSOut
 };
 
 //TotalAlpha And Accumulate Pass
-Pixel_PSOut TotalAlphaAndAccumulatePS( Geometry_VSOut IN )
+Pixel_PSOut AccumulateAndTotalAlphaPS( Geometry_VSOut IN )
 {
 	//Estimate Visibility
 	//3.2 Stochastic Shadow Maps

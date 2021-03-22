@@ -1,0 +1,15 @@
+PlainAlphaBlending_ShadingPS.h
+PlainAlphaBlending_FinalPS.h
+DualDepthPeeling_DDPFirstPassPS.h
+DualDepthPeeling_DDPFinalPS.h
+DualDepthPeeling_DDPDepthPeelPS.h
+DualDepthPeeling_DDPBlendingPS.h
+BaseTechnique_GeometryVS.h
+BaseTechnique_FullScreenTriangleVS.h
+StochasticTransparency_StochasticDepthPS.h
+StochasticTransparency_CompositePS.h
+StochasticTransparency_AccumulateAndTotalAlphaPS.h
+
+OIT.APS
+
+StochasticTransparency.vcxproj.user

@@ -429,6 +429,7 @@ protected:
 	
 	SimpleRT *m_pBackgroundRenderTarget;
 	SimpleDepthStencil *m_pBackgroundDepth;
+    StochasticDepth* m_pStochasticDepth;
 	SimpleRT *m_pStochasticColorAndCorrectTotalAlphaRenderTarget;
     SimpleRT *m_pStochasticTotalAlphaRenderTarget;
 
