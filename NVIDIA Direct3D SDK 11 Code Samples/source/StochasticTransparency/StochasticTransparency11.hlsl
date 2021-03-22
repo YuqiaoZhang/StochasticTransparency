@@ -14,17 +14,18 @@
 
 #include "BaseTechnique.hlsl"
 
-// Assuming that tTransmittance and tBackground have 8 samples per pixel
+// Assuming that tStochasticDepth  have 8 samples per pixel
 #define NUM_MSAA_SAMPLES 8
 
 // Alpha correction (Section 3.2 of the paper)
 // Removes noise for pixels with low depth complexity (1-2 layers / pixel)
 #define USE_ALPHA_CORRECTION 1
 
-Texture2D<uint> tRandoms                : register(t0);
-Texture2DArray<float4> tResolvedColor   : register(t0);
-Texture2DMS<float> tTransmittance       : register(t1);
-Texture2DMS<float3> tBackground         : register(t2);
+Texture2D<uint>    tRandoms             : register(t0);
+Texture2DMS<float> tStochasticDepth     : register(t0);
+Texture2D<float3>  tBackgroundColor     : register(t0);
+Texture2D<float>   tTotalAlphaBuffer    : register(t1);
+Texture2D<float4>  tAccumulationBuffer  : register(t2);
 
 // from http://www.concentric.net/~Ttwang/tech/inthash.htm
 uint ihash(uint seed)
@@ -71,96 +72,80 @@ uint randmaskwide(uint2 pixelPos, float alpha, int primID)
     return tRandoms.Load(int3(coords, 0)).r;
 }
 
-float StochasticTransparencyAlphaPS ( Geometry_VSOut IN ) : SV_Target
+//Total Alpha Pass
+float TotalAlphaPS ( Geometry_VSOut IN ) : SV_Target
 {
     float alpha = ShadeFragment(IN.Normal).a;
     return alpha;
 }
 
-uint StochasticTransparencyDepthPS ( Geometry_VSOut IN, uint PrimitiveID : SV_PrimitiveID ) : SV_Coverage
+//Stochastic Depth Pass
+uint StochasticDepthPS ( Geometry_VSOut IN, uint PrimitiveID : SV_PrimitiveID ) : SV_Coverage
 {
+	//AlphaToCoverage Is Uncorrelated!
+
     float alpha = ShadeFragment(IN.Normal).a;
     return randmaskwide(uint2(IN.HPosition.xy), alpha, PrimitiveID);
 }
 
-float4 StochasticTransparencyColorPS ( Geometry_VSOut IN ) : SV_Target
+//Total Alpha Pass And Accumulation Pass Can Merge ???
+
+//Accumulation Pass
+float4 AccumulationPS ( Geometry_VSOut IN ) : SV_Target
 {
-    float4 color = ShadeFragment(IN.Normal);
-    return float4(color.rgb * color.a, color.a);
+	//Estimate Visibility
+	//3.2 Stochastic Shadow Maps
+	//svis(z) = count(z<=zi)/S ≈ vis(z) //We may use Reverse-Z
+
+	int2 pos2d = int2(IN.HPosition.xy); //Sample 8 Times While Shading Once //We Cast From float To int
+	float z = IN.HPosition.z;
+	uint count = 0;
+	
+	[unroll]
+	for (uint sampleId = 0; sampleId < NUM_MSAA_SAMPLES; ++sampleId)
+	{
+		float zi = tStochasticDepth.Load(pos2d, sampleId).r;
+		if (z <= zi)
+		{
+			++count;
+		}
+	}
+
+	float visz = ((float)count) / ((float)NUM_MSAA_SAMPLES);
+
+	//3.4 Depth-Based Stochastic Transparency
+	//C = Σ vis(z)*a*c
+    float4 c = ShadeFragment(IN.Normal);
+
+	//4.2 Bias of Depth-Based Methods
+	//U = Σ visz * c * a
+	//U1 = Σ visz * a //The "R/S"
+	float ac = visz * c.a;
+	return float4(ac * c.rgb, ac);
 }
 
-float4 CompositeStochasticColors ( FullscreenVSOut IN, int numLayers )
+float4 CompositePS(FullscreenVSOut IN) : SV_Target
 {
     int2 pos2d = int2(IN.pos.xy);
 
-    float3 backgroundColor = 0.0;
-    float trueTransmittance = 0.0;
-    // The MSAA background colors must be multiplied with 1-alpha per sample
-    [unroll]
-    for (int sampleId = 0; sampleId < NUM_MSAA_SAMPLES; ++sampleId)
-    {
-        float T = tTransmittance.Load(pos2d, sampleId).r;
-        backgroundColor += T * tBackground.Load(pos2d, sampleId).rgb;
-        trueTransmittance += T;
-    }
-    backgroundColor *= 1.0/NUM_MSAA_SAMPLES;
-    trueTransmittance *= 1.0/NUM_MSAA_SAMPLES;
+	float3 backgroundColor = tBackgroundColor.Load(int3(pos2d, 0)).rgb;
+	float transmittance = tTotalAlphaBuffer.Load(int3(pos2d, 0)).r;
 
-    // Compute average transparent color ("R/S" in the paper)
-    float4 transparentColor = 0;
-    [unroll]
-    for (int layerId = 0; layerId < numLayers; ++layerId)
-    {
-        transparentColor += tResolvedColor.Load(int4(pos2d, layerId, 0));
-    }
-    transparentColor /= numLayers;
-
+	//4.2 Bias of Depth-Based Methods
 #if USE_ALPHA_CORRECTION
-    if (transparentColor.a > 0.0)
-    {
-        transparentColor *= ((1.0 - trueTransmittance) / transparentColor.a);
-    }
+	float4 t_U_U1 = tAccumulationBuffer.Load(int3(pos2d, 0));
+	float3 U = t_U_U1.rgb; //U = visz * c * a
+	float U1 = t_U_U1.a; //U1 = visz * a //The "R/S"
+
+	float AC = 1.0 - transmittance; //TotalAlpha
+	float3 D = (U1 > 0.0) ? (AC*U / U1) : 0.0;
+
+	float3 transparentColor = D;
+#else
+	 //Too Dark
+	float3 transparentColor = tAccumulationBuffer.Load(int3(pos2d, 0)).rgb;
 #endif
 
-    return float4(transparentColor.rgb + backgroundColor.rgb, 1.0);
-}
-
-float4 StochasticTransparencyComposite1PS ( FullscreenVSOut IN ) : SV_Target
-{
-    return CompositeStochasticColors( IN, 1 );
-}
-
-float4 StochasticTransparencyComposite2PS ( FullscreenVSOut IN ) : SV_Target
-{
-    return CompositeStochasticColors( IN, 2 );
-}
-
-float4 StochasticTransparencyComposite3PS ( FullscreenVSOut IN ) : SV_Target
-{
-    return CompositeStochasticColors( IN, 3 );
-}
-
-float4 StochasticTransparencyComposite4PS ( FullscreenVSOut IN ) : SV_Target
-{
-    return CompositeStochasticColors( IN, 4 );
-}
-
-float4 StochasticTransparencyComposite5PS ( FullscreenVSOut IN ) : SV_Target
-{
-    return CompositeStochasticColors( IN, 5 );
-}
-
-float4 StochasticTransparencyComposite6PS ( FullscreenVSOut IN ) : SV_Target
-{
-    return CompositeStochasticColors( IN, 6 );
-}
-
-float4 StochasticTransparencyComposite7PS ( FullscreenVSOut IN ) : SV_Target
-{
-    return CompositeStochasticColors( IN, 7 );
-}
-
-float4 StochasticTransparencyComposite8PS ( FullscreenVSOut IN ) : SV_Target
-{
-    return CompositeStochasticColors( IN, 8 );
+	//Under Operator
+	return float4(transparentColor + transmittance * backgroundColor, 1.0);
 }

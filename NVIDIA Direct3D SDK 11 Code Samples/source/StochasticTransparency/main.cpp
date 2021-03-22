@@ -17,6 +17,17 @@
 #include "DXUTgui.h"
 #include "DXUTsettingsdlg.h"
 #include "SDKmisc.h"
+#ifndef __ID3DUserDefinedAnnotation_INTERFACE_DEFINED__
+#define __ID3DUserDefinedAnnotation_INTERFACE_DEFINED__
+MIDL_INTERFACE("b2daad8b-03d4-4dbf-95eb-32ab4b63d0ab")
+ID3DUserDefinedAnnotation : public IUnknown
+{
+	virtual INT STDMETHODCALLTYPE BeginEvent(LPCWSTR Name) = 0;
+	virtual INT STDMETHODCALLTYPE EndEvent(void) = 0;
+	virtual void STDMETHODCALLTYPE SetMarker(LPCWSTR Name) = 0;
+	virtual BOOL STDMETHODCALLTYPE GetStatus(void) = 0;
+};
+#endif
 #include "DualDepthPeeling11.h"
 #include "StochasticTransparency11.h"
 #include "PlainAlphaBlending.h"
@@ -212,7 +223,7 @@ void InitGUI()
     g_SampleUI.SetCallback(OnGUIEvent); 
 
     iY = 0;
-    g_SampleUI.AddRadioButton(IDC_USE_STOCHASTIC_TRANSPARENCY,     0, L"Stochastic Transparency" , 10, iY += 24, 125, 22, true);
+    g_SampleUI.AddRadioButton(IDC_USE_STOCHASTIC_TRANSPARENCY,     0, L"Depth-Based Stochastic Transparency" , 10, iY += 24, 125, 22, true);
     g_SampleUI.AddRadioButton(IDC_USE_DUAL_DEPTH_PEELING,          0, L"Dual Depth Peeling" , 10, iY += 24, 125, 22, false);
     g_SampleUI.AddRadioButton(IDC_USE_PLAIN_ALPHA_BLENDING,        0, L"Plain Alpha Blending" , 10, iY += 24, 125, 22, false);
 
