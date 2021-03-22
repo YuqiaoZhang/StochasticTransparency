@@ -46,7 +46,7 @@ struct Geometry_VSIn
 // Use centroid interpolation for the normal to avoid any shading artifacts with MSAA
 struct Geometry_VSOut
 {
-    float4 HPosition            : SV_Position;
+    centroid float4 HPosition            : SV_Position;
     centroid float3 Normal      : TexCoord;
 };
 

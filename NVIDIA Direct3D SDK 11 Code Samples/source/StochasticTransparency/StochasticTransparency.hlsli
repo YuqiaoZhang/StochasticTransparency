@@ -73,15 +73,31 @@ uint randmaskwide(uint2 pixelPos, float alpha, int primID)
 }
 
 //Stochastic Depth Pass
-uint StochasticDepthPS ( Geometry_VSOut IN, uint PrimitiveID : SV_PrimitiveID ) : SV_Coverage
+struct Pixel_PSOut1
+{
+	float depth : SV_DEPTH;
+	//float depthge : SV_DepthGreaterEqual; //Conservative Depth
+	//float depthle : SV_DepthLessEqual; //Z-Reverse
+	uint coverage : SV_Coverage;
+};
+
+//[earlydepthstencil]
+Pixel_PSOut1 StochasticDepthPS ( Geometry_VSOut IN, uint PrimitiveID : SV_PrimitiveID )
 {
 	//AlphaToCoverage Is Uncorrelated!
 
     float alpha = ShadeFragment(IN.Normal).a;
-    return randmaskwide(uint2(IN.HPosition.xy), alpha, PrimitiveID);
+	
+	Pixel_PSOut1 rtval;
+	//TODO: There still exist gaps between the triangles. This may be related to the Tie-Break rule. Try to use conservative rasterization.
+	rtval.depth = IN.HPosition.z; //interpolation centroid not sample 
+	//rtval.depthge = IN.HPosition.z; 
+	//rtval.depthle = IN.HPosition.z;
+	rtval.coverage = randmaskwide(uint2(IN.HPosition.xy), alpha, PrimitiveID);
+	return rtval;
 }
 
-//We merge the passes AccumulatePass and TotalAlphaPass into a single pass.
+//We Merge TotalAlpha Pass And Accumulation Pass Together.
 struct Pixel_PSOut
 {
 	float4 StochasticColorAndCorrectTotalAlpha : SV_Target0;
